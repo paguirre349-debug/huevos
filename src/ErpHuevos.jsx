@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Boxes, Egg, Users, Truck,
   Package, Wallet, FileBarChart, Target, Sparkles, Settings,
   Search, Plus, Bell, TrendingUp, TrendingDown, Command,
-  ChevronRight, Trash2, Loader2, Pencil,
+  ChevronRight, Trash2, Loader2, Pencil, Menu, X,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -237,10 +237,18 @@ function Productos({ toast }) {
 function QuickSale({ open, onClose, toast, onSaved }) {
   const [products, setProducts] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ product_id: "", cantidad: 1, metodo_pago: "efectivo", observaciones: "" });
+  const [form, setForm] = useState({ product_id: "", cantidad: 1, metodo_pago: "efectivo", observaciones: "", fecha: "" });
+
+  // Devuelve la fecha/hora actual en formato para el input datetime-local
+  const ahoraLocal = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  };
 
   useEffect(() => {
     if (!open) return;
+    setForm((f) => ({ ...f, fecha: ahoraLocal() }));
     supabase.from("products").select("*").eq("activo", true).then(({ data }) => {
       setProducts(data || []);
       if (data?.[0]) setForm((f) => ({ ...f, product_id: f.product_id || data[0].id }));
@@ -257,6 +265,7 @@ function QuickSale({ open, onClose, toast, onSaved }) {
     const ganancia = (prod.precio_venta - prod.costo_actual) * cant;
     const { data: sale, error: e1 } = await supabase.from("sales").insert({
       metodo_pago: form.metodo_pago, total, ganancia, observaciones: form.observaciones,
+      fecha: form.fecha ? new Date(form.fecha).toISOString() : new Date().toISOString(),
     }).select().single();
     if (e1) { setSaving(false); return toast(e1.message, "err"); }
     const { error: e2 } = await supabase.from("sale_items").insert({
@@ -269,7 +278,7 @@ function QuickSale({ open, onClose, toast, onSaved }) {
     });
     setSaving(false);
     toast("Venta guardada ✓");
-    setForm({ product_id: prod.id, cantidad: 1, metodo_pago: "efectivo", observaciones: "" });
+    setForm({ product_id: prod.id, cantidad: 1, metodo_pago: "efectivo", observaciones: "", fecha: ahoraLocal() });
     onSaved && onSaved();
     onClose();
   };
@@ -306,6 +315,12 @@ function QuickSale({ open, onClose, toast, onSaved }) {
                   <input type="number" value={form.cantidad} min={1}
                     onChange={(e) => setForm({ ...form, cantidad: e.target.value })}
                     className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+                </Field>
+                <Field label="Fecha y hora de la venta">
+                  <input type="datetime-local" value={form.fecha}
+                    onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+                  <p className="text-[11px] mt-1" style={{ color: C.sub }}>Viene con la hora actual. Cambiala si cargás una venta de antes.</p>
                 </Field>
                 <Field label="Forma de pago">
                   <select value={form.metodo_pago} onChange={(e) => setForm({ ...form, metodo_pago: e.target.value })}
@@ -756,6 +771,7 @@ export default function ErpHuevos() {
   const [active, setActive] = useState("dashboard");
   const [cmdOpen, setCmdOpen] = useState(false);
   const [saleOpen, setSaleOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // menú móvil
   const [refreshKey, setRefreshKey] = useState(0);
   const { show, node } = useToast();
   const refresh = () => setRefreshKey((k) => k + 1);
@@ -763,7 +779,7 @@ export default function ErpHuevos() {
   useEffect(() => {
     const h = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setCmdOpen((v) => !v); }
-      if (e.key === "Escape") { setCmdOpen(false); setSaleOpen(false); }
+      if (e.key === "Escape") { setCmdOpen(false); setSaleOpen(false); setMenuOpen(false); }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -781,63 +797,105 @@ export default function ErpHuevos() {
     }
   };
 
+  const goTo = (key) => { setActive(key); setMenuOpen(false); };
+
+  // Contenido del menú (se usa en desktop fijo y en el drawer móvil)
+  const SidebarContent = () => (
+    <>
+      <div className="flex items-center gap-2.5 px-2 mb-6">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: C.amber }}>
+          <Egg size={20} color="#0B0F19" />
+        </div>
+        <div>
+          <div className="font-bold text-sm leading-tight">Don Stefano</div>
+          <div className="text-[11px]" style={{ color: C.sub }}>ERP Huevos</div>
+        </div>
+      </div>
+      <nav className="flex-1 space-y-0.5 overflow-y-auto">
+        {nav.map((n) => {
+          const on = active === n.key;
+          return (
+            <button key={n.key} onClick={() => goTo(n.key)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all relative"
+              style={{ background: on ? `${C.amber}14` : "transparent", color: on ? C.text : C.sub }}>
+              {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full" style={{ background: C.amber }} />}
+              <n.icon size={17} style={{ color: on ? C.amber : C.sub }} />{n.label}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="flex items-center gap-3 px-2 pt-4 mt-2" style={{ borderTop: `1px solid ${C.border}` }}>
+        <div className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm" style={{ background: `${C.blue}33`, color: C.blue }}>P</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">Patricio</div>
+          <div className="text-[11px] truncate" style={{ color: C.sub }}>Dueño</div>
+        </div>
+        <Settings size={16} style={{ color: C.sub }} />
+      </div>
+    </>
+  );
+
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif" }} className="flex">
-      <aside className="w-60 shrink-0 h-screen sticky top-0 flex flex-col p-4" style={{ borderRight: `1px solid ${C.border}` }}>
-        <div className="flex items-center gap-2.5 px-2 mb-6">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: C.amber }}>
-            <Egg size={20} color="#0B0F19" />
-          </div>
-          <div>
-            <div className="font-bold text-sm leading-tight">Don Stefano</div>
-            <div className="text-[11px]" style={{ color: C.sub }}>ERP Huevos</div>
-          </div>
-        </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto">
-          {nav.map((n) => {
-            const on = active === n.key;
-            return (
-              <button key={n.key} onClick={() => setActive(n.key)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all relative"
-                style={{ background: on ? `${C.amber}14` : "transparent", color: on ? C.text : C.sub }}>
-                {on && <motion.span layoutId="active-bar" className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full" style={{ background: C.amber }} />}
-                <n.icon size={17} style={{ color: on ? C.amber : C.sub }} />{n.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="flex items-center gap-3 px-2 pt-4 mt-2" style={{ borderTop: `1px solid ${C.border}` }}>
-          <div className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm" style={{ background: `${C.blue}33`, color: C.blue }}>P</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">Patricio</div>
-            <div className="text-[11px] truncate" style={{ color: C.sub }}>Dueño</div>
-          </div>
-          <Settings size={16} style={{ color: C.sub }} />
-        </div>
+      {/* Sidebar fija (solo desktop) */}
+      <aside className="hidden lg:flex w-60 shrink-0 h-screen sticky top-0 flex-col p-4" style={{ borderRight: `1px solid ${C.border}` }}>
+        <SidebarContent />
       </aside>
+
+      {/* Drawer móvil */}
+      <AnimatePresence>
+        {menuOpen && (
+          <>
+            <motion.div className="fixed inset-0 z-40 lg:hidden" style={{ background: "rgba(0,0,0,0.6)" }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMenuOpen(false)} />
+            <motion.aside className="fixed left-0 top-0 bottom-0 z-50 w-64 flex flex-col p-4 lg:hidden"
+              style={{ background: C.card, borderRight: `1px solid ${C.border}` }}
+              initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}>
+              <SidebarContent />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       <div className="flex-1 min-w-0">
-        <header className="sticky top-0 z-30 px-6 py-4 flex items-center gap-4"
-          style={{ background: "rgba(11,15,25,0.8)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}` }}>
-          <div>
-            <h1 className="font-bold text-lg leading-tight">Hola Patricio 👋</h1>
-            <p className="text-xs capitalize" style={{ color: C.sub }}>{today}</p>
+        {/* Topbar */}
+        <header className="sticky top-0 z-30 px-4 sm:px-6 py-4 flex items-center gap-3"
+          style={{ background: "rgba(11,15,25,0.85)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}` }}>
+          {/* Botón hamburguesa (solo móvil) */}
+          <button onClick={() => setMenuOpen(true)}
+            className="lg:hidden w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            <Menu size={20} style={{ color: C.text }} />
+          </button>
+
+          <div className="min-w-0">
+            <h1 className="font-bold text-base sm:text-lg leading-tight truncate">Hola Patricio 👋</h1>
+            <p className="text-xs capitalize truncate" style={{ color: C.sub }}>{today}</p>
           </div>
+
+          {/* Buscador (solo desktop) */}
           <button onClick={() => setCmdOpen(true)}
-            className="ml-auto flex items-center gap-2 px-3 py-2 rounded-xl text-sm w-64 transition hover:brightness-125"
+            className="ml-auto hidden md:flex items-center gap-2 px-3 py-2 rounded-xl text-sm w-64 transition hover:brightness-125"
             style={{ background: C.card, border: `1px solid ${C.border}`, color: C.sub }}>
             <Search size={15} /><span className="flex-1 text-left">Buscar…</span>
             <kbd className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded" style={{ background: C.border }}><Command size={10} />K</kbd>
           </button>
+
           <motion.button whileTap={{ scale: 0.95 }} onClick={() => setSaleOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
-            <Plus size={16} /> Venta
+            className="ml-auto md:ml-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-sm font-semibold shrink-0"
+            style={{ background: C.amber, color: "#0B0F19" }}>
+            <Plus size={16} /> <span className="hidden sm:inline">Venta</span>
           </motion.button>
-          <button className="relative w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+
+          <button className="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: C.card, border: `1px solid ${C.border}` }}>
             <Bell size={17} style={{ color: C.sub }} />
           </button>
         </header>
-        <main className="p-6">{render()}</main>
+
+        <main className="p-4 sm:p-6">{render()}</main>
       </div>
+
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onNav={setActive} />
       <QuickSale open={saleOpen} onClose={() => setSaleOpen(false)} toast={show} onSaved={refresh} />
       {node}
