@@ -4,11 +4,11 @@ import {
   LayoutDashboard, ShoppingCart, Boxes, Egg, Users, Truck,
   Package, Wallet, FileBarChart, Target, Sparkles, Settings,
   Search, Plus, Bell, TrendingUp, TrendingDown, Command,
-  ChevronRight, Trash2, Loader2, Pencil, Menu, X,
+  ChevronRight, Trash2, Loader2, Pencil, Menu, X, Clock,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
-  PieChart, Pie, Cell, CartesianGrid,
+  PieChart, Pie, Cell, CartesianGrid, BarChart, Bar,
 } from "recharts";
 import { supabase } from "./supabase";
 
@@ -405,31 +405,42 @@ function Stat({ icon: Icon, label, value, color, i }) {
   );
 }
 
+const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const DIAS_LARGO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
 function Dashboard({ refreshKey }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data: sales } = await supabase.from("sales").select("*");
+      const { data: salesRaw } = await supabase.from("sales").select("*");
       const { data: items } = await supabase.from("sale_items").select("*");
-      const all = sales || [];
+      const { data: products } = await supabase.from("products").select("*");
+      const all = salesRaw || [];
+      const its = items || [];
+      const prods = products || [];
+
       const hoy = new Date().toDateString();
       const ventasHoy = all.filter((s) => new Date(s.fecha).toDateString() === hoy);
       const facturacionHoy = ventasHoy.reduce((a, s) => a + Number(s.total || 0), 0);
       const gananciaHoy = ventasHoy.reduce((a, s) => a + Number(s.ganancia || 0), 0);
-      const unidadesHoy = (items || []).filter((it) => {
+      const unidadesHoy = its.filter((it) => {
         const s = all.find((x) => x.id === it.sale_id);
         return s && new Date(s.fecha).toDateString() === hoy;
       }).reduce((a, it) => a + Number(it.cantidad || 0), 0);
+
+      // Últimos 7 días
       const last7 = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(); d.setDate(d.getDate() - (6 - i));
         const key = d.toDateString();
-        const dia = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"][d.getDay()];
         const total = all.filter((s) => new Date(s.fecha).toDateString() === key)
           .reduce((a, s) => a + Number(s.total || 0), 0);
-        return { name: dia, ventas: total };
+        return { name: DIAS[d.getDay()], ventas: total };
       });
+
+      // Método de pago
       const metodos = {};
       all.forEach((s) => { metodos[s.metodo_pago] = (metodos[s.metodo_pago] || 0) + 1; });
       const totalV = all.length || 1;
@@ -437,7 +448,94 @@ function Dashboard({ refreshKey }) {
       const metodoPago = Object.entries(metodos).map(([name, v]) => ({
         name, value: Math.round((v / totalV) * 100), color: colorMap[name] || C.sub,
       }));
-      setStats({ facturacionHoy, gananciaHoy, unidadesHoy, totalVentas: all.length, last7, metodoPago });
+
+      // Ventas por día de la semana (facturación acumulada por día)
+      const porDiaSemana = DIAS.map((d, idx) => {
+        const total = all.filter((s) => new Date(s.fecha).getDay() === idx)
+          .reduce((a, s) => a + Number(s.total || 0), 0);
+        return { name: d, ventas: total, idx };
+      });
+
+      // Ventas por hora
+      const porHora = Array.from({ length: 24 }, (_, h) => {
+        const total = all.filter((s) => new Date(s.fecha).getHours() === h)
+          .reduce((a, s) => a + Number(s.total || 0), 0);
+        return { name: `${h}h`, ventas: total, h };
+      }).filter((x) => x.h >= 6 && x.h <= 22); // franja comercial
+
+      // Ventas por producto (unidades)
+      const unidadesPorProd = {};
+      its.forEach((it) => {
+        const p = prods.find((x) => x.id === it.product_id);
+        const nombre = p?.nombre || "—";
+        unidadesPorProd[nombre] = (unidadesPorProd[nombre] || 0) + Number(it.cantidad || 0);
+      });
+      const totalUnidades = Object.values(unidadesPorProd).reduce((a, b) => a + b, 0) || 1;
+      const porProducto = Object.entries(unidadesPorProd)
+        .map(([name, v]) => ({ name, value: Math.round((v / totalUnidades) * 100), unidades: v }))
+        .sort((a, b) => b.unidades - a.unidades);
+
+      // Heatmap 20 semanas (por día, cantidad de maples vendidos)
+      const hoyDate = new Date();
+      const heatDias = 140; // 20 semanas
+      const heatMap = {};
+      its.forEach((it) => {
+        const s = all.find((x) => x.id === it.sale_id);
+        if (!s) return;
+        const key = new Date(s.fecha).toDateString();
+        heatMap[key] = (heatMap[key] || 0) + Number(it.cantidad || 0);
+      });
+      const heatData = [];
+      for (let i = heatDias - 1; i >= 0; i--) {
+        const d = new Date(hoyDate); d.setDate(d.getDate() - i);
+        heatData.push({ date: d, value: heatMap[d.toDateString()] || 0 });
+      }
+      const maxHeat = Math.max(1, ...heatData.map((x) => x.value));
+
+      // ANÁLISIS AUTOMÁTICO
+      // Mejor día de la semana
+      const conVentas = porDiaSemana.filter((d) => d.ventas > 0);
+      const promDia = conVentas.length ? conVentas.reduce((a, d) => a + d.ventas, 0) / conVentas.length : 0;
+      const mejorDia = [...porDiaSemana].sort((a, b) => b.ventas - a.ventas)[0];
+      const mejorDiaPct = promDia > 0 && mejorDia.ventas > 0
+        ? Math.round(((mejorDia.ventas - promDia) / promDia) * 100) : 0;
+
+      // Hora pico
+      const mejorHora = [...porHora].sort((a, b) => b.ventas - a.ventas)[0];
+      const totalFacturado = all.reduce((a, s) => a + Number(s.total || 0), 0) || 1;
+      const mejorHoraPct = mejorHora ? Math.round((mejorHora.ventas / totalFacturado) * 100) : 0;
+
+      // Producto más rentable (mayor margen %)
+      const margenPorProd = prods.map((p) => {
+        const margen = p.precio_venta > 0 ? ((p.precio_venta - p.costo_actual) / p.precio_venta) * 100 : 0;
+        return { nombre: p.nombre, margen: Math.round(margen) };
+      }).sort((a, b) => b.margen - a.margen);
+      const masRentable = margenPorProd[0];
+
+      // Producto sin rotación (hace más días sin venderse)
+      const ultimaVentaProd = {};
+      its.forEach((it) => {
+        const s = all.find((x) => x.id === it.sale_id);
+        if (!s) return;
+        const f = new Date(s.fecha).getTime();
+        if (!ultimaVentaProd[it.product_id] || f > ultimaVentaProd[it.product_id]) {
+          ultimaVentaProd[it.product_id] = f;
+        }
+      });
+      let sinRotacion = null;
+      prods.forEach((p) => {
+        const ult = ultimaVentaProd[p.id];
+        const dias = ult ? Math.floor((Date.now() - ult) / (1000 * 60 * 60 * 24)) : 999;
+        if (!sinRotacion || dias > sinRotacion.dias) sinRotacion = { nombre: p.nombre, dias, nunca: !ult };
+      });
+
+      setStats({
+        facturacionHoy, gananciaHoy, unidadesHoy, totalVentas: all.length,
+        last7, metodoPago, porDiaSemana, porHora, porProducto,
+        heatData, maxHeat,
+        mejorDia, mejorDiaPct, mejorHora, mejorHoraPct, masRentable, sinRotacion,
+        hayVentas: all.length > 0,
+      });
       setLoading(false);
     })();
   }, [refreshKey]);
@@ -449,28 +547,48 @@ function Dashboard({ refreshKey }) {
       </div>
     );
   }
+
   const noData = stats.totalVentas === 0;
+
+  const heatShade = (v) => {
+    if (v === 0) return C.border;
+    const r = v / stats.maxHeat;
+    if (r < 0.25) return `${C.amber}40`;
+    if (r < 0.5) return `${C.amber}70`;
+    if (r < 0.75) return `${C.amber}A8`;
+    return C.amber;
+  };
+
+  // Agrupar heatData en semanas (columnas)
+  const semanas = [];
+  for (let i = 0; i < stats.heatData.length; i += 7) {
+    semanas.push(stats.heatData.slice(i, i + 7));
+  }
+
   return (
     <div className="space-y-5">
       {noData && (
         <Card className="p-4" style={{ borderColor: C.amber }}>
           <div className="text-sm" style={{ color: C.text }}>
-            👋 Todavía no cargaste ventas. Los números están en cero porque ahora son reales.
-            Cargá tu primer producto en <b style={{ color: C.amber }}>Productos</b> y después una venta con <b style={{ color: C.amber }}>+ Venta</b>.
+            👋 Todavía no cargaste ventas. Los análisis se van a ir llenando a medida que registres ventas.
           </div>
         </Card>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+
+      {/* Hero cards */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <Stat i={0} icon={Egg} label="Huevos vendidos hoy" value={stats.unidadesHoy.toLocaleString("es-AR")} color={C.amber} />
         <Stat i={1} icon={Wallet} label="Facturación hoy" value={money(stats.facturacionHoy)} color={C.green} />
         <Stat i={2} icon={TrendingUp} label="Ganancia hoy" value={money(stats.gananciaHoy)} color={C.blue} />
         <Stat i={3} icon={ShoppingCart} label="Ventas totales" value={stats.totalVentas.toLocaleString("es-AR")} color={C.amber} />
       </div>
+
+      {/* Ventas 7 días + método de pago */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <motion.div custom={4} variants={fadeUp} initial="hidden" animate="show" style={{ gridColumn: "span 2" }}>
+        <motion.div custom={4} variants={fadeUp} initial="hidden" animate="show" className="lg:col-span-2">
           <Card className="p-5">
             <h3 className="font-semibold mb-4" style={{ color: C.text }}>Ventas últimos 7 días</h3>
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={stats.last7} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="a7" x1="0" y1="0" x2="0" y2="1">
@@ -494,9 +612,9 @@ function Dashboard({ refreshKey }) {
               <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Sin datos aún</div>
             ) : (
               <>
-                <ResponsiveContainer width="100%" height={180}>
+                <ResponsiveContainer width="100%" height={160}>
                   <PieChart>
-                    <Pie data={stats.metodoPago} dataKey="value" innerRadius={50} outerRadius={75} paddingAngle={3} strokeWidth={0}>
+                    <Pie data={stats.metodoPago} dataKey="value" innerRadius={45} outerRadius={70} paddingAngle={3} strokeWidth={0}>
                       {stats.metodoPago.map((m) => <Cell key={m.name} fill={m.color} />)}
                     </Pie>
                     <Tooltip content={<ChartTip fmt={(v) => v + "%"} />} />
@@ -516,6 +634,131 @@ function Dashboard({ refreshKey }) {
             )}
           </Card>
         </motion.div>
+      </div>
+
+      {/* Heatmap + Análisis automático */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <motion.div custom={6} variants={fadeUp} initial="hidden" animate="show" className="lg:col-span-2">
+          <Card className="p-5">
+            <h3 className="font-semibold" style={{ color: C.text }}>Actividad de ventas</h3>
+            <p className="text-xs mb-4" style={{ color: C.sub }}>Últimas 20 semanas · más oscuro = más maples</p>
+            <div className="overflow-x-auto pb-1">
+              <div className="flex gap-[3px]">
+                {semanas.map((sem, wi) => (
+                  <div key={wi} className="flex flex-col gap-[3px]">
+                    {sem.map((d, di) => (
+                      <div key={di} title={`${d.value} maples · ${d.date.toLocaleDateString("es-AR")}`}
+                        style={{ width: 12, height: 12, borderRadius: 3, background: heatShade(d.value) }} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-4 text-[11px]" style={{ color: C.sub }}>
+              Menos
+              {[C.border, `${C.amber}40`, `${C.amber}70`, `${C.amber}A8`, C.amber].map((c, i) => (
+                <span key={i} style={{ width: 11, height: 11, borderRadius: 3, background: c }} />
+              ))}
+              Más
+            </div>
+          </Card>
+        </motion.div>
+
+        <motion.div custom={7} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <h3 className="font-semibold" style={{ color: C.text }}>Análisis automático</h3>
+            <p className="text-xs mb-4" style={{ color: C.sub }}>Detectado por el sistema</p>
+            {!stats.hayVentas ? (
+              <div className="py-6 text-center text-sm" style={{ color: C.sub }}>
+                Cargá ventas para ver los análisis.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Insight icon={TrendingUp} color={C.green} titulo="Mejor día"
+                  valor={stats.mejorDia?.ventas > 0 ? DIAS_LARGO[stats.mejorDia.idx] : "—"}
+                  detalle={stats.mejorDiaPct > 0 ? `+${stats.mejorDiaPct}% sobre el promedio` : "Aún con pocos datos"} />
+                <Insight icon={Clock} color={C.amber} titulo="Hora pico"
+                  valor={stats.mejorHora?.ventas > 0 ? stats.mejorHora.name : "—"}
+                  detalle={stats.mejorHoraPct > 0 ? `El ${stats.mejorHoraPct}% de lo facturado` : "Aún con pocos datos"} />
+                <Insight icon={Egg} color={C.blue} titulo="Más rentable"
+                  valor={stats.masRentable?.nombre || "—"}
+                  detalle={stats.masRentable ? `Margen del ${stats.masRentable.margen}%` : "Cargá productos"} />
+                <Insight icon={TrendingDown} color={C.red} titulo="Sin rotación"
+                  valor={stats.sinRotacion?.nombre || "—"}
+                  detalle={stats.sinRotacion?.nunca ? "Nunca se vendió" : stats.sinRotacion ? `Hace ${stats.sinRotacion.dias} días` : "—"} />
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Gráficos extra: por hora, por día de semana, por producto */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <motion.div custom={8} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <h3 className="font-semibold mb-4" style={{ color: C.text }}>Ventas por hora</h3>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={stats.porHora} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                <XAxis dataKey="name" stroke={C.sub} fontSize={9} tickLine={false} axisLine={false} interval={2} />
+                <YAxis hide />
+                <Tooltip content={<ChartTip fmt={money} />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="ventas" radius={[4, 4, 0, 0]} fill={C.blue} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </motion.div>
+
+        <motion.div custom={9} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <h3 className="font-semibold mb-4" style={{ color: C.text }}>Ventas por día</h3>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={stats.porDiaSemana} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                <XAxis dataKey="name" stroke={C.sub} fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis hide />
+                <Tooltip content={<ChartTip fmt={money} />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Bar dataKey="ventas" radius={[4, 4, 0, 0]} fill={C.amber} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </motion.div>
+
+        <motion.div custom={10} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <h3 className="font-semibold mb-4" style={{ color: C.text }}>Ventas por producto</h3>
+            {stats.porProducto.length === 0 ? (
+              <div className="py-10 text-center text-sm" style={{ color: C.sub }}>Sin datos aún</div>
+            ) : (
+              <div className="space-y-2.5 mt-1">
+                {stats.porProducto.map((p) => (
+                  <div key={p.name}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span style={{ color: C.sub }}>{p.name}</span>
+                      <span style={{ color: C.text }} className="font-semibold">{p.value}%</span>
+                    </div>
+                    <div className="h-2 rounded-full" style={{ background: C.bg }}>
+                      <div className="h-full rounded-full" style={{ background: C.amber, width: `${p.value}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function Insight({ icon: Icon, color, titulo, valor, detalle }) {
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-xl" style={{ background: C.bg }}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}1A` }}>
+        <Icon size={15} style={{ color }} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[11px]" style={{ color: C.sub }}>{titulo}</div>
+        <div className="text-sm font-semibold truncate" style={{ color: C.text }}>{valor}</div>
+        <div className="text-[11px] mt-0.5" style={{ color: C.sub }}>{detalle}</div>
       </div>
     </div>
   );
