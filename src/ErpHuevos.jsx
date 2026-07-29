@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Boxes, Egg, Users, Truck,
   Package, Wallet, FileBarChart, Target, Sparkles, Settings,
   Search, Plus, Bell, TrendingUp, TrendingDown, Command,
-  ChevronRight, Trash2, Loader2,
+  ChevronRight, Trash2, Loader2, Pencil,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -95,6 +95,8 @@ function Productos({ toast }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ nombre: "", precio_venta: "", costo_actual: "", unidades_por_maple: 30 });
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({ precio_venta: "", costo_actual: "" });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +127,22 @@ function Productos({ toast }) {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return toast(error.message, "err");
     toast("Producto eliminado"); load();
+  };
+
+  const startEdit = (p) => {
+    setEditId(p.id);
+    setEditForm({ precio_venta: p.precio_venta, costo_actual: p.costo_actual });
+  };
+
+  const saveEdit = async (id) => {
+    const { error } = await supabase.from("products").update({
+      precio_venta: Number(editForm.precio_venta) || 0,
+      costo_actual: Number(editForm.costo_actual) || 0,
+    }).eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Precio actualizado");
+    setEditId(null);
+    load();
   };
 
   const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
@@ -169,15 +187,44 @@ function Productos({ toast }) {
           <div className="space-y-2">
             {items.map((p) => (
               <div key={p.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
-                <div>
-                  <div className="font-medium text-sm" style={{ color: C.text }}>{p.nombre}</div>
-                  <div className="text-xs" style={{ color: C.sub }}>
-                    Venta {money(p.precio_venta)} · Costo {money(p.costo_actual)}
-                  </div>
-                </div>
-                <button onClick={() => del(p.id)} className="p-2 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
-                  <Trash2 size={16} />
-                </button>
+                {editId === p.id ? (
+                  <>
+                    <div className="flex items-center gap-2 flex-1 flex-wrap">
+                      <span className="font-medium text-sm" style={{ color: C.text }}>{p.nombre}</span>
+                      <span className="text-xs" style={{ color: C.sub }}>Venta</span>
+                      <input type="number" value={editForm.precio_venta}
+                        onChange={(e) => setEditForm({ ...editForm, precio_venta: e.target.value })}
+                        className="w-24 px-2 py-1 rounded-lg text-sm outline-none" style={inp} />
+                      <span className="text-xs" style={{ color: C.sub }}>Costo</span>
+                      <input type="number" value={editForm.costo_actual}
+                        onChange={(e) => setEditForm({ ...editForm, costo_actual: e.target.value })}
+                        className="w-24 px-2 py-1 rounded-lg text-sm outline-none" style={inp} />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => saveEdit(p.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        style={{ background: C.green, color: "#0B0F19" }}>Guardar</button>
+                      <button onClick={() => setEditId(null)} className="px-3 py-1.5 rounded-lg text-xs"
+                        style={{ color: C.sub }}>Cancelar</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <div className="font-medium text-sm" style={{ color: C.text }}>{p.nombre}</div>
+                      <div className="text-xs" style={{ color: C.sub }}>
+                        Venta {money(p.precio_venta)} · Costo {money(p.costo_actual)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEdit(p)} className="p-2 rounded-lg hover:bg-white/5" style={{ color: C.blue }}>
+                        <Pencil size={16} />
+                      </button>
+                      <button onClick={() => del(p.id)} className="p-2 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -513,6 +560,15 @@ function Stock({ toast, refreshKey, bump }) {
     bump && bump();
   };
 
+  const borrarMov = async (id) => {
+    if (!window.confirm("¿Borrar este movimiento? El stock se va a recalcular. Esta acción no se puede deshacer.")) return;
+    const { error } = await supabase.from("stock_movements").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Movimiento borrado");
+    load();
+    bump && bump();
+  };
+
   const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
 
   return (
@@ -628,8 +684,13 @@ function Stock({ toast, refreshKey, bump }) {
                       {m.motivo} · {new Date(m.fecha).toLocaleString("es-AR")}
                     </div>
                   </div>
-                  <div className="text-sm font-semibold" style={{ color: esEntrada ? C.green : C.red }}>
-                    {esEntrada ? "+" : "−"}{m.cantidad} maples
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-semibold" style={{ color: esEntrada ? C.green : C.red }}>
+                      {esEntrada ? "+" : "−"}{m.cantidad} maples
+                    </div>
+                    <button onClick={() => borrarMov(m.id)} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
               );
