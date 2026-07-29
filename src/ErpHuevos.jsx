@@ -960,6 +960,191 @@ function Stock({ toast, refreshKey, bump }) {
   );
 }
 
+function IAChat({ toast }) {
+  const [mensajes, setMensajes] = useState([
+    { de: "ia", texto: "¡Hola Patricio! Soy el asistente de tu negocio. Preguntame cosas como: \"¿cuánto vendí hoy?\", \"¿cuál es mi mejor día?\", \"¿cuánto stock tengo?\" o \"¿cuál es mi producto más vendido?\"." },
+  ]);
+  const [input, setInput] = useState("");
+  const [pensando, setPensando] = useState(false);
+  const finRef = useRef(null);
+
+  useEffect(() => { finRef.current?.scrollIntoView({ behavior: "smooth" }); }, [mensajes]);
+
+  const responder = async (pregunta) => {
+    const q = pregunta.toLowerCase();
+    // Traer datos frescos
+    const { data: sales } = await supabase.from("sales").select("*");
+    const { data: items } = await supabase.from("sale_items").select("*");
+    const { data: products } = await supabase.from("products").select("*");
+    const { data: movs } = await supabase.from("stock_movements").select("*");
+    const all = sales || [], its = items || [], prods = products || [], mv = movs || [];
+
+    const hoy = new Date().toDateString();
+    const ahora = new Date();
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    const hace7 = new Date(); hace7.setDate(hace7.getDate() - 7);
+
+    const sum = (arr, campo) => arr.reduce((a, s) => a + Number(s[campo] || 0), 0);
+    const ventasHoy = all.filter((s) => new Date(s.fecha).toDateString() === hoy);
+    const ventasMes = all.filter((s) => new Date(s.fecha) >= inicioMes);
+    const ventasSemana = all.filter((s) => new Date(s.fecha) >= hace7);
+
+    // Detección de intención
+    const tiene = (...palabras) => palabras.some((p) => q.includes(p));
+
+    // GANANCIA
+    if (tiene("ganancia", "gané", "gane", "gano")) {
+      if (tiene("mes")) return `Este mes ganaste ${money(sum(ventasMes, "ganancia"))} en ${ventasMes.length} ventas.`;
+      if (tiene("semana")) return `En los últimos 7 días ganaste ${money(sum(ventasSemana, "ganancia"))}.`;
+      return `Hoy ganaste ${money(sum(ventasHoy, "ganancia"))} en ${ventasHoy.length} ventas.`;
+    }
+
+    // VENTAS / FACTURACIÓN
+    if (tiene("vendí", "vendi", "vendido", "facturación", "facturacion", "facturé", "venta")) {
+      if (tiene("mes")) return `Este mes vendiste ${money(sum(ventasMes, "total"))} en ${ventasMes.length} ventas.`;
+      if (tiene("semana")) return `En los últimos 7 días vendiste ${money(sum(ventasSemana, "total"))} en ${ventasSemana.length} ventas.`;
+      if (tiene("total", "cuántas", "cuantas", "cuántos", "cuantos")) return `En total tenés ${all.length} ventas registradas, por ${money(sum(all, "total"))}.`;
+      return `Hoy vendiste ${money(sum(ventasHoy, "total"))} en ${ventasHoy.length} ventas.`;
+    }
+
+    // MEJOR DÍA
+    if (tiene("mejor día", "mejor dia", "qué día", "que dia")) {
+      const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+      const porDia = DIAS.map((d, i) => ({
+        dia: d, total: all.filter((s) => new Date(s.fecha).getDay() === i).reduce((a, s) => a + Number(s.total || 0), 0),
+      }));
+      const mejor = [...porDia].sort((a, b) => b.total - a.total)[0];
+      if (mejor.total === 0) return "Todavía no tengo suficientes ventas para saber tu mejor día. Cargá algunas más.";
+      return `Tu mejor día es el ${mejor.dia}, con ${money(mejor.total)} acumulados.`;
+    }
+
+    // HORA PICO
+    if (tiene("hora", "horario")) {
+      const porHora = {};
+      all.forEach((s) => { const h = new Date(s.fecha).getHours(); porHora[h] = (porHora[h] || 0) + Number(s.total || 0); });
+      const entradas = Object.entries(porHora).sort((a, b) => b[1] - a[1]);
+      if (entradas.length === 0) return "Todavía no hay ventas para calcular la hora pico.";
+      return `Tu hora de mayor venta es a las ${entradas[0][0]}h, con ${money(entradas[0][1])} acumulados.`;
+    }
+
+    // PRODUCTO MÁS VENDIDO
+    if (tiene("más vendido", "mas vendido", "producto que más", "qué producto", "que producto", "producto estrella")) {
+      const porProd = {};
+      its.forEach((it) => {
+        const p = prods.find((x) => x.id === it.product_id);
+        const n = p?.nombre || "—";
+        porProd[n] = (porProd[n] || 0) + Number(it.cantidad || 0);
+      });
+      const orden = Object.entries(porProd).sort((a, b) => b[1] - a[1]);
+      if (orden.length === 0) return "Todavía no vendiste ningún producto.";
+      return `Tu producto más vendido es "${orden[0][0]}" con ${orden[0][1]} maples vendidos.`;
+    }
+
+    // STOCK
+    if (tiene("stock", "cuánto tengo", "cuanto tengo", "cuántos maples", "cuantos maples", "cajones")) {
+      const totalMaples = mv.reduce((a, m) => a + (m.tipo === "entrada" ? Number(m.cantidad) : -Number(m.cantidad)), 0);
+      const cajones = Math.floor(totalMaples / 12);
+      return `Tenés ${totalMaples} maples en stock (aproximadamente ${cajones} cajones).`;
+    }
+
+    // TICKET PROMEDIO
+    if (tiene("ticket", "promedio", "compra promedio")) {
+      if (all.length === 0) return "Todavía no hay ventas para calcular el ticket promedio.";
+      return `Tu ticket promedio es ${money(sum(all, "total") / all.length)} por venta.`;
+    }
+
+    // CANTIDAD DE VENTAS
+    if (tiene("cuántas ventas", "cuantas ventas", "número de ventas")) {
+      return `Tenés ${all.length} ventas en total. Hoy hiciste ${ventasHoy.length}.`;
+    }
+
+    // No entendió
+    return "Mmm, todavía no sé responder eso. Probá preguntándome sobre: ventas (hoy/semana/mes), ganancia, mejor día, hora pico, producto más vendido, stock o ticket promedio.";
+  };
+
+  const enviar = async () => {
+    const pregunta = input.trim();
+    if (!pregunta || pensando) return;
+    setMensajes((m) => [...m, { de: "user", texto: pregunta }]);
+    setInput("");
+    setPensando(true);
+    // Pequeña demora para que se sienta natural
+    await new Promise((r) => setTimeout(r, 400));
+    try {
+      const respuesta = await responder(pregunta);
+      setMensajes((m) => [...m, { de: "ia", texto: respuesta }]);
+    } catch (e) {
+      setMensajes((m) => [...m, { de: "ia", texto: "Uy, tuve un problema para leer los datos. Probá de nuevo." }]);
+    }
+    setPensando(false);
+  };
+
+  const sugerencias = ["¿Cuánto vendí hoy?", "¿Cuál es mi mejor día?", "¿Cuánto stock tengo?", "¿Producto más vendido?"];
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <Card className="p-0 overflow-hidden flex flex-col" style={{ height: "70vh" }}>
+        <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${C.border}` }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${C.amber}1A` }}>
+            <Sparkles size={18} style={{ color: C.amber }} />
+          </div>
+          <div>
+            <div className="font-semibold text-sm" style={{ color: C.text }}>Preguntale al negocio</div>
+            <div className="text-[11px]" style={{ color: C.sub }}>Responde con tus datos reales</div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {mensajes.map((m, i) => (
+            <div key={i} className={`flex ${m.de === "user" ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[80%] px-4 py-2.5 rounded-2xl text-sm"
+                style={{
+                  background: m.de === "user" ? C.amber : C.bg,
+                  color: m.de === "user" ? "#0B0F19" : C.text,
+                  borderBottomRightRadius: m.de === "user" ? 4 : 16,
+                  borderBottomLeftRadius: m.de === "user" ? 16 : 4,
+                }}>
+                {m.texto}
+              </div>
+            </div>
+          ))}
+          {pensando && (
+            <div className="flex justify-start">
+              <div className="px-4 py-2.5 rounded-2xl text-sm flex items-center gap-2" style={{ background: C.bg, color: C.sub }}>
+                <Loader2 size={14} className="animate-spin" /> Pensando…
+              </div>
+            </div>
+          )}
+          <div ref={finRef} />
+        </div>
+
+        {mensajes.length <= 1 && (
+          <div className="px-5 pb-2 flex flex-wrap gap-2">
+            {sugerencias.map((s) => (
+              <button key={s} onClick={() => { setInput(s); }}
+                className="text-xs px-3 py-1.5 rounded-full" style={{ background: C.bg, color: C.sub, border: `1px solid ${C.border}` }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="p-4 flex gap-2" style={{ borderTop: `1px solid ${C.border}` }}>
+          <input value={input} onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && enviar()}
+            placeholder="Escribí tu pregunta…"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm outline-none"
+            style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.text }} />
+          <motion.button whileTap={{ scale: 0.95 }} onClick={enviar} disabled={pensando}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+            Enviar
+          </motion.button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div className="flex flex-col items-center justify-center h-[70vh] text-center">
@@ -1036,6 +1221,7 @@ export default function ErpHuevos() {
       case "ventas": return <Ventas toast={show} refreshKey={refreshKey} />;
       case "productos": return <Productos toast={show} />;
       case "stock": return <Stock toast={show} refreshKey={refreshKey} bump={refresh} />;
+      case "ia": return <IAChat toast={show} />;
       default: return <Placeholder label={nav.find((n) => n.key === active)?.label} />;
     }
   };
