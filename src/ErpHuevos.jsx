@@ -459,6 +459,188 @@ function Dashboard({ refreshKey }) {
   );
 }
 
+const MAPLES_POR_CAJON = 12;
+
+function Stock({ toast, refreshKey, bump }) {
+  const [products, setProducts] = useState([]);
+  const [movs, setMovs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ product_id: "", unidad: "cajon", cantidad: 1, tipo: "entrada" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: prods } = await supabase.from("products").select("*").eq("activo", true);
+    const { data: m } = await supabase.from("stock_movements").select("*").order("fecha", { ascending: false });
+    setProducts(prods || []);
+    setMovs(m || []);
+    if (prods?.[0]) setForm((f) => ({ ...f, product_id: f.product_id || prods[0].id }));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  // Stock por producto = entradas - salidas (todo en maples)
+  const stockPorProducto = products.map((p) => {
+    const relacionados = movs.filter((m) => m.product_id === p.id);
+    const total = relacionados.reduce((acc, m) => {
+      const suma = ["entrada"].includes(m.tipo) ? Number(m.cantidad) : -Number(m.cantidad);
+      return acc + suma;
+    }, 0);
+    return { ...p, maples: total };
+  });
+
+  const totalMaples = stockPorProducto.reduce((a, p) => a + p.maples, 0);
+
+  const cargar = async () => {
+    if (!form.product_id) return toast("Elegí un producto", "err");
+    const cant = Number(form.cantidad) || 0;
+    if (cant <= 0) return toast("La cantidad debe ser mayor a 0", "err");
+    setSaving(true);
+    // Convertir a maples si viene por cajón
+    const maples = form.unidad === "cajon" ? cant * MAPLES_POR_CAJON : cant;
+    const { error } = await supabase.from("stock_movements").insert({
+      product_id: form.product_id,
+      tipo: "entrada",
+      cantidad: maples,
+      motivo: form.unidad === "cajon" ? `${cant} cajón/es (${maples} maples)` : `${maples} maples`,
+    });
+    setSaving(false);
+    if (error) return toast(error.message, "err");
+    toast(`Entrada cargada: +${maples} maples`);
+    setForm({ ...form, cantidad: 1 });
+    load();
+    bump && bump();
+  };
+
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="space-y-5">
+      {/* Resumen */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <motion.div custom={0} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4" style={{ background: `${C.amber}1A` }}>
+              <Boxes size={18} style={{ color: C.amber }} />
+            </div>
+            <div className="text-sm mb-1" style={{ color: C.sub }}>Stock total</div>
+            <div className="text-3xl font-bold tracking-tight" style={{ color: C.text }}>
+              {totalMaples.toLocaleString("es-AR")} <span className="text-lg" style={{ color: C.sub }}>maples</span>
+            </div>
+            <div className="text-sm mt-1" style={{ color: C.sub }}>
+              ≈ {Math.floor(totalMaples / MAPLES_POR_CAJON)} cajones
+              {totalMaples % MAPLES_POR_CAJON > 0 && ` y ${totalMaples % MAPLES_POR_CAJON} maples`}
+            </div>
+          </Card>
+        </motion.div>
+        <motion.div custom={1} variants={fadeUp} initial="hidden" animate="show">
+          <Card className="p-5">
+            <div className="text-sm mb-3 font-medium" style={{ color: C.text }}>Stock por producto</div>
+            {stockPorProducto.length === 0 ? (
+              <div className="text-sm" style={{ color: C.sub }}>Sin productos aún</div>
+            ) : (
+              <div className="space-y-2">
+                {stockPorProducto.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between text-sm">
+                    <span style={{ color: C.sub }}>{p.nombre}</span>
+                    <span style={{ color: C.text }} className="font-semibold">
+                      {p.maples} maples
+                      <span style={{ color: C.sub }} className="font-normal"> ({Math.floor(p.maples / MAPLES_POR_CAJON)} caj.)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Cargar entrada */}
+      <Card className="p-5">
+        <h3 className="font-semibold mb-1" style={{ color: C.text }}>Cargar entrada de stock</h3>
+        <p className="text-xs mb-4" style={{ color: C.sub }}>Un cajón son {MAPLES_POR_CAJON} maples. Elegí en qué unidad cargás.</p>
+        {products.length === 0 ? (
+          <div className="p-4 rounded-xl text-sm" style={{ background: C.bg, color: C.sub }}>
+            Primero cargá un producto en <b style={{ color: C.amber }}>Productos</b>.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div>
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Producto</label>
+              <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })}
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={inp}>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Unidad</label>
+              <select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })}
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={inp}>
+                <option value="cajon">Cajón (12 maples)</option>
+                <option value="maple">Maple suelto</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Cantidad</label>
+              <input type="number" min={1} value={form.cantidad}
+                onChange={(e) => setForm({ ...form, cantidad: e.target.value })}
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+            </div>
+            <motion.button whileTap={{ scale: 0.97 }} onClick={cargar} disabled={saving}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: C.amber, color: "#0B0F19" }}>
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              Cargar
+            </motion.button>
+          </div>
+        )}
+        {form.unidad === "cajon" && Number(form.cantidad) > 0 && (
+          <div className="text-xs mt-3" style={{ color: C.green }}>
+            Vas a sumar {Number(form.cantidad) * MAPLES_POR_CAJON} maples al stock.
+          </div>
+        )}
+      </Card>
+
+      {/* Historial de movimientos */}
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Movimientos recientes</h3>
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 justify-center" style={{ color: C.sub }}>
+            <Loader2 size={18} className="animate-spin" /> Cargando…
+          </div>
+        ) : movs.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>
+            Todavía no hay movimientos. Cargá una entrada arriba.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {movs.slice(0, 30).map((m) => {
+              const prod = products.find((p) => p.id === m.product_id);
+              const esEntrada = m.tipo === "entrada";
+              return (
+                <div key={m.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
+                  <div>
+                    <div className="font-medium text-sm capitalize" style={{ color: C.text }}>
+                      {esEntrada ? "Entrada" : "Salida"} · {prod?.nombre || "—"}
+                    </div>
+                    <div className="text-xs" style={{ color: C.sub }}>
+                      {m.motivo} · {new Date(m.fecha).toLocaleString("es-AR")}
+                    </div>
+                  </div>
+                  <div className="text-sm font-semibold" style={{ color: esEntrada ? C.green : C.red }}>
+                    {esEntrada ? "+" : "−"}{m.cantidad} maples
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div className="flex flex-col items-center justify-center h-[70vh] text-center">
@@ -533,6 +715,7 @@ export default function ErpHuevos() {
       case "dashboard": return <Dashboard refreshKey={refreshKey} />;
       case "ventas": return <Ventas toast={show} refreshKey={refreshKey} />;
       case "productos": return <Productos toast={show} />;
+      case "stock": return <Stock toast={show} refreshKey={refreshKey} bump={refresh} />;
       default: return <Placeholder label={nav.find((n) => n.key === active)?.label} />;
     }
   };
