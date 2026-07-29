@@ -849,7 +849,7 @@ export default function ErpHuevos() {
             <motion.div className="fixed inset-0 z-40 lg:hidden" style={{ background: "rgba(0,0,0,0.6)" }}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMenuOpen(false)} />
             <motion.aside className="fixed left-0 top-0 bottom-0 z-50 w-64 flex flex-col p-4 lg:hidden"
-              style={{ background: C.card, borderRight: `1px solid ${C.border}` }}
+              style={{ background: C.card, borderRight: `1px solid ${C.border}`, paddingTop: "max(1rem, env(safe-area-inset-top))" }}
               initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}>
               <SidebarContent />
@@ -861,7 +861,7 @@ export default function ErpHuevos() {
       <div className="flex-1 min-w-0">
         {/* Topbar */}
         <header className="sticky top-0 z-30 px-4 sm:px-6 py-4 flex items-center gap-3"
-          style={{ background: "rgba(11,15,25,0.85)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}` }}>
+          style={{ background: "rgba(11,15,25,0.85)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${C.border}`, paddingTop: "max(1rem, env(safe-area-inset-top))" }}>
           {/* Botón hamburguesa (solo móvil) */}
           <button onClick={() => setMenuOpen(true)}
             className="lg:hidden w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
