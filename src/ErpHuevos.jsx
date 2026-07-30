@@ -1522,6 +1522,61 @@ function CommandPalette({ open, onClose, onNav }) {
   );
 }
 
+function Login({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+
+  const entrar = async () => {
+    if (!email.trim() || !pass) { setError("Completá usuario y contraseña"); return; }
+    setCargando(true); setError("");
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
+    setCargando(false);
+    if (error) { setError("Usuario o contraseña incorrectos"); return; }
+    onLogin();
+  };
+
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4"
+      style={{ background: C.bg, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+        style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 24 }}
+        className="w-full max-w-sm p-8">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ background: C.amber }}>
+            <Egg size={28} color="#0B0F19" />
+          </div>
+          <div className="font-bold text-lg" style={{ color: C.text }}>Don Stefano</div>
+          <div className="text-xs" style={{ color: C.sub }}>ERP Huevos</div>
+        </div>
+
+        <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Usuario (email)</label>
+        <input value={email} onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && entrar()}
+          placeholder="tucorreo@ejemplo.com" autoComplete="username"
+          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4" style={inp} />
+
+        <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Contraseña</label>
+        <input type="password" value={pass} onChange={(e) => setPass(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && entrar()}
+          placeholder="••••••••" autoComplete="current-password"
+          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4" style={inp} />
+
+        {error && <div className="text-xs mb-4 text-center" style={{ color: C.red }}>{error}</div>}
+
+        <motion.button whileTap={{ scale: 0.97 }} onClick={entrar} disabled={cargando}
+          className="w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2"
+          style={{ background: C.amber, color: "#0B0F19" }}>
+          {cargando ? <Loader2 size={16} className="animate-spin" /> : null} Entrar
+        </motion.button>
+      </motion.div>
+    </div>
+  );
+}
+
 function AppInterna({ onLogout }) {
   const [active, setActive] = useState("dashboard");
   const [cmdOpen, setCmdOpen] = useState(false);
