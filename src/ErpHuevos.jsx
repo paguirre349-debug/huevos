@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Boxes, Egg, Users, Truck,
   Package, Wallet, FileBarChart, Target, Sparkles, Settings,
   Search, Plus, Bell, TrendingUp, TrendingDown, Command,
-  ChevronRight, Trash2, Loader2, Pencil, Menu, X, Clock,
+  ChevronRight, Trash2, Loader2, Pencil, Menu, X, Clock, Download, Target as TargetIcon, Lightbulb,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -1145,6 +1145,333 @@ function IAChat({ toast }) {
   );
 }
 
+const CATEGORIAS_GASTO = ["Mercadería", "Transporte", "Servicios", "Sueldos", "Alquiler", "Impuestos", "Otros"];
+
+function Gastos({ toast }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const ahoraLocal = () => {
+    const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  };
+  const [form, setForm] = useState({ categoria: "Mercadería", monto: "", descripcion: "", fecha: ahoraLocal() });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("expenses").select("*").order("fecha", { ascending: false });
+    if (error) toast(error.message, "err"); else setItems(data || []);
+    setLoading(false);
+  }, [toast]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!(Number(form.monto) > 0)) return toast("Poné un monto válido", "err");
+    setSaving(true);
+    const { error } = await supabase.from("expenses").insert({
+      categoria: form.categoria, monto: Number(form.monto),
+      descripcion: form.descripcion, fecha: new Date(form.fecha).toISOString(),
+    });
+    setSaving(false);
+    if (error) return toast(error.message, "err");
+    toast("Gasto registrado");
+    setForm({ categoria: "Mercadería", monto: "", descripcion: "", fecha: ahoraLocal() });
+    load();
+  };
+
+  const del = async (id) => {
+    const { error } = await supabase.from("expenses").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Gasto eliminado"); load();
+  };
+
+  const ahora = new Date();
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  const gastoMes = items.filter((g) => new Date(g.fecha) >= inicioMes).reduce((a, g) => a + Number(g.monto || 0), 0);
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="space-y-5">
+      <Card className="p-5">
+        <div className="text-sm mb-1" style={{ color: C.sub }}>Gastos de este mes</div>
+        <div className="text-3xl font-bold" style={{ color: C.red }}>{money(gastoMes)}</div>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Nuevo gasto</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+          <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp}>
+            {CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <input placeholder="Monto" type="number" value={form.monto}
+            onChange={(e) => setForm({ ...form, monto: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input type="datetime-local" value={form.fecha}
+            onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Nota (opcional)" value={form.descripcion}
+            onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+        </div>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={add} disabled={saving}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Registrar gasto
+        </motion.button>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Historial de gastos</h3>
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 justify-center" style={{ color: C.sub }}>
+            <Loader2 size={18} className="animate-spin" /> Cargando…
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>Todavía no registraste gastos.</div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((g) => (
+              <div key={g.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
+                <div>
+                  <div className="font-medium text-sm" style={{ color: C.text }}>{g.categoria}</div>
+                  <div className="text-xs" style={{ color: C.sub }}>
+                    {g.descripcion ? `${g.descripcion} · ` : ""}{new Date(g.fecha).toLocaleDateString("es-AR")}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-sm font-semibold" style={{ color: C.red }}>−{money(g.monto)}</div>
+                  <button onClick={() => del(g.id)} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Reportes({ toast }) {
+  const [generando, setGenerando] = useState(false);
+
+  const generarPDF = async () => {
+    setGenerando(true);
+    const { data: sales } = await supabase.from("sales").select("*").order("fecha", { ascending: false });
+    const { data: expenses } = await supabase.from("expenses").select("*").order("fecha", { ascending: false });
+    const all = sales || [], gastos = expenses || [];
+
+    const ahora = new Date();
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    const ventasMes = all.filter((s) => new Date(s.fecha) >= inicioMes);
+    const gastosMes = gastos.filter((g) => new Date(g.fecha) >= inicioMes);
+    const totalVentas = ventasMes.reduce((a, s) => a + Number(s.total || 0), 0);
+    const totalGanancia = ventasMes.reduce((a, s) => a + Number(s.ganancia || 0), 0);
+    const totalGastos = gastosMes.reduce((a, g) => a + Number(g.monto || 0), 0);
+    const neto = totalGanancia - totalGastos;
+
+    const filasVentas = ventasMes.slice(0, 100).map((s) => `
+      <tr><td>${new Date(s.fecha).toLocaleString("es-AR")}</td><td>${s.metodo_pago}</td>
+      <td style="text-align:right">${money(s.total)}</td><td style="text-align:right;color:#16a34a">${money(s.ganancia)}</td></tr>`).join("");
+    const filasGastos = gastosMes.slice(0, 100).map((g) => `
+      <tr><td>${new Date(g.fecha).toLocaleDateString("es-AR")}</td><td>${g.categoria}</td>
+      <td>${g.descripcion || ""}</td><td style="text-align:right;color:#dc2626">${money(g.monto)}</td></tr>`).join("");
+
+    const mesNombre = ahora.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+    const html = `
+      <html><head><meta charset="utf-8"><title>Reporte Don Stefano</title>
+      <style>
+        body{font-family:system-ui,Arial,sans-serif;padding:40px;color:#111}
+        h1{color:#F59E0B;margin-bottom:0} .sub{color:#666;margin-top:4px}
+        .cards{display:flex;gap:16px;margin:24px 0;flex-wrap:wrap}
+        .card{border:1px solid #ddd;border-radius:12px;padding:16px;flex:1;min-width:140px}
+        .card .lbl{font-size:12px;color:#666} .card .val{font-size:22px;font-weight:bold;margin-top:4px}
+        table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+        th{text-align:left;border-bottom:2px solid #333;padding:8px}
+        td{border-bottom:1px solid #eee;padding:8px}
+        h2{margin-top:32px;border-left:4px solid #F59E0B;padding-left:10px}
+      </style></head><body>
+      <h1>Don Stefano · ERP Huevos</h1>
+      <div class="sub">Reporte de ${mesNombre} · generado el ${ahora.toLocaleString("es-AR")}</div>
+      <div class="cards">
+        <div class="card"><div class="lbl">Facturación</div><div class="val">${money(totalVentas)}</div></div>
+        <div class="card"><div class="lbl">Ganancia bruta</div><div class="val" style="color:#16a34a">${money(totalGanancia)}</div></div>
+        <div class="card"><div class="lbl">Gastos</div><div class="val" style="color:#dc2626">${money(totalGastos)}</div></div>
+        <div class="card"><div class="lbl">Neto</div><div class="val" style="color:${neto >= 0 ? "#16a34a" : "#dc2626"}">${money(neto)}</div></div>
+      </div>
+      <h2>Ventas del mes (${ventasMes.length})</h2>
+      <table><tr><th>Fecha</th><th>Pago</th><th style="text-align:right">Total</th><th style="text-align:right">Ganancia</th></tr>${filasVentas || '<tr><td colspan="4">Sin ventas</td></tr>'}</table>
+      <h2>Gastos del mes (${gastosMes.length})</h2>
+      <table><tr><th>Fecha</th><th>Categoría</th><th>Nota</th><th style="text-align:right">Monto</th></tr>${filasGastos || '<tr><td colspan="4">Sin gastos</td></tr>'}</table>
+      </body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { setGenerando(false); return toast("Permití las ventanas emergentes para generar el PDF", "err"); }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 500);
+    setGenerando(false);
+  };
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <Card className="p-6">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: `${C.amber}1A` }}>
+          <FileBarChart size={22} style={{ color: C.amber }} />
+        </div>
+        <h3 className="font-semibold text-lg mb-1" style={{ color: C.text }}>Reporte mensual</h3>
+        <p className="text-sm mb-5" style={{ color: C.sub }}>
+          Generá un PDF con las ventas, gastos y el resumen del mes actual. Se abre la ventana de impresión: elegí "Guardar como PDF".
+        </p>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={generarPDF} disabled={generando}
+          className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+          {generando ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Generar PDF del mes
+        </motion.button>
+      </Card>
+    </div>
+  );
+}
+
+function Objetivos({ toast }) {
+  const [goals, setGoals] = useState([]);
+  const [items, setItems] = useState([]);
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ titulo: "", objetivo_cajones: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: g } = await supabase.from("goals").select("*").order("created_at", { ascending: false });
+    const { data: its } = await supabase.from("sale_items").select("*");
+    const { data: s } = await supabase.from("sales").select("*");
+    setGoals(g || []); setItems(its || []); setSales(s || []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!form.titulo.trim()) return toast("Poné un título", "err");
+    if (!(Number(form.objetivo_cajones) > 0)) return toast("Poné cuántos cajones", "err");
+    setSaving(true);
+    const { error } = await supabase.from("goals").insert({
+      titulo: form.titulo.trim(),
+      objetivo_maples: Number(form.objetivo_cajones) * 12,
+    });
+    setSaving(false);
+    if (error) return toast(error.message, "err");
+    toast("Objetivo creado");
+    setForm({ titulo: "", objetivo_cajones: "" });
+    load();
+  };
+
+  const del = async (id) => {
+    const { error } = await supabase.from("goals").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Objetivo eliminado"); load();
+  };
+
+  // Maples vendidos desde el inicio del objetivo
+  const maplesDesde = (fechaInicio) => {
+    const ini = new Date(fechaInicio).getTime();
+    return items.filter((it) => {
+      const s = sales.find((x) => x.id === it.sale_id);
+      return s && new Date(s.fecha).getTime() >= ini;
+    }).reduce((a, it) => a + Number(it.cantidad || 0), 0);
+  };
+
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  // Estrategias según progreso
+  const estrategias = (pct) => {
+    if (pct >= 100) return ["¡Objetivo cumplido! Subí la meta para el próximo período.", "Fidelizá a tus mejores clientes con un pequeño beneficio.", "Analizá qué día y horario funcionó mejor y reforzá ahí."];
+    if (pct >= 70) return ["Estás cerca. Ofrecé descuento por cajón entero para acelerar.", "Contactá a clientes que hace tiempo no compran.", "Reforzá el stock de tu producto más vendido para no quedarte sin."];
+    if (pct >= 40) return ["Vas por la mitad. Publicá en Marketplace y redes para sumar ventas.", "Armá un combo (cajón + descuento) para subir el ticket promedio.", "Aprovechá tu mejor día de la semana con una promo puntual."];
+    return ["Recién arrancás. Difundí que vendés huevos por maple y por cajón.", "Ofrecé el primer pedido con un pequeño descuento para captar clientes.", "Pedí a conocidos que te recomienden; el boca a boca es clave al inicio.", "Asegurate de tener stock cargado para no perder ventas."];
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Nuevo objetivo</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <input placeholder="Título (ej: Meta de julio)" value={form.titulo}
+            onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none md:col-span-2" style={inp} />
+          <input placeholder="Cajones a vender" type="number" value={form.objetivo_cajones}
+            onChange={(e) => setForm({ ...form, objetivo_cajones: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+        </div>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={add} disabled={saving}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Crear objetivo
+        </motion.button>
+      </Card>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-8 justify-center" style={{ color: C.sub }}>
+          <Loader2 size={18} className="animate-spin" /> Cargando…
+        </div>
+      ) : goals.length === 0 ? (
+        <Card className="p-8 text-center">
+          <div className="text-sm" style={{ color: C.sub }}>Todavía no tenés objetivos. Creá el primero arriba.</div>
+        </Card>
+      ) : (
+        goals.map((g) => {
+          const vendidos = maplesDesde(g.fecha_inicio || g.created_at);
+          const objetivoCajones = Math.round(g.objetivo_maples / 12);
+          const vendidosCajones = Math.floor(vendidos / 12);
+          const pct = g.objetivo_maples > 0 ? Math.min(100, Math.round((vendidos / g.objetivo_maples) * 100)) : 0;
+          const faltanCajones = Math.max(0, objetivoCajones - vendidosCajones);
+          return (
+            <Card key={g.id} className="p-5">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${C.amber}1A` }}>
+                    <TargetIcon size={18} style={{ color: C.amber }} />
+                  </div>
+                  <div>
+                    <div className="font-semibold" style={{ color: C.text }}>{g.titulo}</div>
+                    <div className="text-xs" style={{ color: C.sub }}>Meta: {objetivoCajones} cajones ({g.objetivo_maples} maples)</div>
+                  </div>
+                </div>
+                <button onClick={() => del(g.id)} className="p-2 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+
+              <div className="flex items-end justify-between mb-2">
+                <div className="text-2xl font-bold" style={{ color: C.text }}>{pct}%</div>
+                <div className="text-sm" style={{ color: C.sub }}>
+                  {vendidosCajones} de {objetivoCajones} cajones {faltanCajones > 0 && `· faltan ${faltanCajones}`}
+                </div>
+              </div>
+              <div className="h-3 rounded-full mb-5" style={{ background: C.bg }}>
+                <div className="h-full rounded-full transition-all" style={{ background: pct >= 100 ? C.green : C.amber, width: `${pct}%` }} />
+              </div>
+
+              <div className="p-4 rounded-xl" style={{ background: C.bg }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Lightbulb size={15} style={{ color: C.amber }} />
+                  <span className="text-sm font-semibold" style={{ color: C.text }}>Estrategias para vender más</span>
+                </div>
+                <ul className="space-y-2">
+                  {estrategias(pct).map((e, i) => (
+                    <li key={i} className="text-sm flex gap-2" style={{ color: C.sub }}>
+                      <span style={{ color: C.amber }}>•</span> {e}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div className="flex flex-col items-center justify-center h-[70vh] text-center">
@@ -1222,6 +1549,9 @@ export default function ErpHuevos() {
       case "productos": return <Productos toast={show} />;
       case "stock": return <Stock toast={show} refreshKey={refreshKey} bump={refresh} />;
       case "ia": return <IAChat toast={show} />;
+      case "gastos": return <Gastos toast={show} />;
+      case "reportes": return <Reportes toast={show} />;
+      case "objetivos": return <Objetivos toast={show} />;
       default: return <Placeholder label={nav.find((n) => n.key === active)?.label} />;
     }
   };
