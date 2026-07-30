@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Boxes, Egg, Users, Truck,
   Package, Wallet, FileBarChart, Target, Sparkles, Settings,
   Search, Plus, Bell, TrendingUp, TrendingDown, Command,
-  ChevronRight, Trash2, Loader2, Pencil, Menu, X, Clock, Download, Target as TargetIcon, Lightbulb,
+  ChevronRight, Trash2, Loader2, Pencil, Menu, X, Clock, Download, Target as TargetIcon, Lightbulb, Phone, AlertCircle, Save,
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -1472,6 +1472,359 @@ function Objetivos({ toast }) {
   );
 }
 
+function Clientes({ toast }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ nombre: "", telefono: "", notas: "", deuda: "" });
+  const [editId, setEditId] = useState(null);
+  const [editDeuda, setEditDeuda] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("clients").select("*").order("created_at", { ascending: false });
+    if (error) toast(error.message, "err"); else setItems(data || []);
+    setLoading(false);
+  }, [toast]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!form.nombre.trim()) return toast("Poné un nombre", "err");
+    setSaving(true);
+    const { error } = await supabase.from("clients").insert({
+      nombre: form.nombre.trim(), telefono: form.telefono, notas: form.notas,
+      deuda: Number(form.deuda) || 0,
+    });
+    setSaving(false);
+    if (error) return toast(error.message, "err");
+    toast("Cliente agregado");
+    setForm({ nombre: "", telefono: "", notas: "", deuda: "" });
+    load();
+  };
+
+  const del = async (id) => {
+    const { error } = await supabase.from("clients").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Cliente eliminado"); load();
+  };
+
+  const guardarDeuda = async (id) => {
+    const { error } = await supabase.from("clients").update({ deuda: Number(editDeuda) || 0 }).eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Deuda actualizada");
+    setEditId(null); load();
+  };
+
+  const deudores = items.filter((c) => Number(c.deuda) > 0);
+  const totalDeuda = deudores.reduce((a, c) => a + Number(c.deuda), 0);
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="space-y-5">
+      {deudores.length > 0 && (
+        <Card className="p-5" style={{ borderColor: C.red }}>
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle size={18} style={{ color: C.red }} />
+            <span className="font-semibold" style={{ color: C.text }}>Recordatorio de cobros</span>
+          </div>
+          <div className="text-sm mb-3" style={{ color: C.sub }}>
+            Tenés {deudores.length} cliente/s que te deben, por un total de <b style={{ color: C.red }}>{money(totalDeuda)}</b>.
+          </div>
+          <div className="space-y-1.5">
+            {deudores.map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-sm p-2 rounded-lg" style={{ background: C.bg }}>
+                <span style={{ color: C.text }}>{c.nombre} {c.telefono && <span style={{ color: C.sub }}>· {c.telefono}</span>}</span>
+                <span className="font-semibold" style={{ color: C.red }}>{money(c.deuda)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Nuevo cliente</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+          <input placeholder="Nombre" value={form.nombre}
+            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Teléfono" value={form.telefono}
+            onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Deuda inicial (opcional)" type="number" value={form.deuda}
+            onChange={(e) => setForm({ ...form, deuda: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Notas (opcional)" value={form.notas}
+            onChange={(e) => setForm({ ...form, notas: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+        </div>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={add} disabled={saving}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Agregar cliente
+        </motion.button>
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Tus clientes</h3>
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 justify-center" style={{ color: C.sub }}>
+            <Loader2 size={18} className="animate-spin" /> Cargando…
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>Todavía no cargaste clientes.</div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((c) => (
+              <div key={c.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
+                <div className="min-w-0">
+                  <div className="font-medium text-sm" style={{ color: C.text }}>{c.nombre}</div>
+                  <div className="text-xs" style={{ color: C.sub }}>
+                    {c.telefono && <span>{c.telefono} · </span>}{c.notas}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {editId === c.id ? (
+                    <>
+                      <input type="number" value={editDeuda} onChange={(e) => setEditDeuda(e.target.value)}
+                        className="w-24 px-2 py-1 rounded-lg text-sm outline-none" style={inp} />
+                      <button onClick={() => guardarDeuda(c.id)} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ background: C.green, color: "#0B0F19" }}>OK</button>
+                    </>
+                  ) : (
+                    <button onClick={() => { setEditId(c.id); setEditDeuda(c.deuda || 0); }}
+                      className="text-sm font-semibold px-2 py-1 rounded-lg"
+                      style={{ color: Number(c.deuda) > 0 ? C.red : C.sub, background: Number(c.deuda) > 0 ? `${C.red}1A` : "transparent" }}>
+                      {Number(c.deuda) > 0 ? `Debe ${money(c.deuda)}` : "Sin deuda"}
+                    </button>
+                  )}
+                  <button onClick={() => del(c.id)} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function ProveedoresCompras({ toast }) {
+  const [suppliers, setSuppliers] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [savingS, setSavingS] = useState(false);
+  const [savingP, setSavingP] = useState(false);
+  const ahoraLocal = () => {
+    const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  };
+  const [formS, setFormS] = useState({ nombre: "", telefono: "", notas: "" });
+  const [formP, setFormP] = useState({ supplier_id: "", descripcion: "", monto: "", fecha: ahoraLocal() });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: s } = await supabase.from("suppliers").select("*").order("created_at", { ascending: false });
+    const { data: p } = await supabase.from("purchases").select("*").order("fecha", { ascending: false });
+    setSuppliers(s || []); setPurchases(p || []);
+    if (s?.[0]) setFormP((f) => ({ ...f, supplier_id: f.supplier_id || s[0].id }));
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const addSupplier = async () => {
+    if (!formS.nombre.trim()) return toast("Poné un nombre", "err");
+    setSavingS(true);
+    const { error } = await supabase.from("suppliers").insert({
+      nombre: formS.nombre.trim(), telefono: formS.telefono, notas: formS.notas,
+    });
+    setSavingS(false);
+    if (error) return toast(error.message, "err");
+    toast("Proveedor agregado");
+    setFormS({ nombre: "", telefono: "", notas: "" });
+    load();
+  };
+
+  const delSupplier = async (id) => {
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Proveedor eliminado"); load();
+  };
+
+  const addPurchase = async () => {
+    if (!formP.supplier_id) return toast("Elegí un proveedor", "err");
+    if (!(Number(formP.monto) > 0)) return toast("Poné un monto válido", "err");
+    setSavingP(true);
+    const { error } = await supabase.from("purchases").insert({
+      supplier_id: formP.supplier_id, descripcion: formP.descripcion,
+      monto: Number(formP.monto), fecha: new Date(formP.fecha).toISOString(),
+    });
+    setSavingP(false);
+    if (error) return toast(error.message, "err");
+    toast("Compra registrada");
+    setFormP({ ...formP, descripcion: "", monto: "", fecha: ahoraLocal() });
+    load();
+  };
+
+  const delPurchase = async (id) => {
+    const { error } = await supabase.from("purchases").delete().eq("id", id);
+    if (error) return toast(error.message, "err");
+    toast("Compra eliminada"); load();
+  };
+
+  const ahora = new Date();
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  const compraMes = purchases.filter((p) => new Date(p.fecha) >= inicioMes).reduce((a, p) => a + Number(p.monto || 0), 0);
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="space-y-5">
+      <Card className="p-5">
+        <div className="text-sm mb-1" style={{ color: C.sub }}>Compras de este mes</div>
+        <div className="text-3xl font-bold" style={{ color: C.red }}>{money(compraMes)}</div>
+      </Card>
+
+      {/* Proveedores */}
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Proveedores</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+          <input placeholder="Nombre" value={formS.nombre}
+            onChange={(e) => setFormS({ ...formS, nombre: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Teléfono" value={formS.telefono}
+            onChange={(e) => setFormS({ ...formS, telefono: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+          <input placeholder="Notas (opcional)" value={formS.notas}
+            onChange={(e) => setFormS({ ...formS, notas: e.target.value })}
+            className="px-3 py-2.5 rounded-xl text-sm outline-none md:col-span-2" style={inp} />
+        </div>
+        <motion.button whileTap={{ scale: 0.97 }} onClick={addSupplier} disabled={savingS}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold mb-4" style={{ background: C.amber, color: "#0B0F19" }}>
+          {savingS ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Agregar proveedor
+        </motion.button>
+        {suppliers.length > 0 && (
+          <div className="space-y-2">
+            {suppliers.map((s) => (
+              <div key={s.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
+                <div>
+                  <div className="font-medium text-sm" style={{ color: C.text }}>{s.nombre}</div>
+                  <div className="text-xs" style={{ color: C.sub }}>{s.telefono}{s.notas ? ` · ${s.notas}` : ""}</div>
+                </div>
+                <button onClick={() => delSupplier(s.id)} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Compras */}
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Registrar compra</h3>
+        {suppliers.length === 0 ? (
+          <div className="p-4 rounded-xl text-sm" style={{ background: C.bg, color: C.sub }}>
+            Primero agregá un proveedor arriba.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+              <select value={formP.supplier_id} onChange={(e) => setFormP({ ...formP, supplier_id: e.target.value })}
+                className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp}>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+              <input placeholder="Qué compraste" value={formP.descripcion}
+                onChange={(e) => setFormP({ ...formP, descripcion: e.target.value })}
+                className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+              <input placeholder="Monto" type="number" value={formP.monto}
+                onChange={(e) => setFormP({ ...formP, monto: e.target.value })}
+                className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+              <input type="datetime-local" value={formP.fecha}
+                onChange={(e) => setFormP({ ...formP, fecha: e.target.value })}
+                className="px-3 py-2.5 rounded-xl text-sm outline-none" style={inp} />
+            </div>
+            <motion.button whileTap={{ scale: 0.97 }} onClick={addPurchase} disabled={savingP}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+              {savingP ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Registrar compra
+            </motion.button>
+          </>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="font-semibold mb-4" style={{ color: C.text }}>Historial de compras</h3>
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 justify-center" style={{ color: C.sub }}>
+            <Loader2 size={18} className="animate-spin" /> Cargando…
+          </div>
+        ) : purchases.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: C.sub }}>Todavía no registraste compras.</div>
+        ) : (
+          <div className="space-y-2">
+            {purchases.map((p) => {
+              const prov = suppliers.find((s) => s.id === p.supplier_id);
+              return (
+                <div key={p.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.bg }}>
+                  <div>
+                    <div className="font-medium text-sm" style={{ color: C.text }}>{prov?.nombre || "—"}</div>
+                    <div className="text-xs" style={{ color: C.sub }}>
+                      {p.descripcion ? `${p.descripcion} · ` : ""}{new Date(p.fecha).toLocaleDateString("es-AR")}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm font-semibold" style={{ color: C.red }}>−{money(p.monto)}</div>
+                    <button onClick={() => delPurchase(p.id)} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: C.red }}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Configuracion({ toast, nombreNegocio, onNombreChange }) {
+  const [nombre, setNombre] = useState(nombreNegocio || "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setNombre(nombreNegocio || ""); }, [nombreNegocio]);
+
+  const guardar = async () => {
+    setSaving(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const uid = userData?.user?.id;
+    const { error } = await supabase.from("user_settings").upsert({
+      user_id: uid, nombre_negocio: nombre.trim(), updated_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    if (error) return toast(error.message, "err");
+    toast("Configuración guardada");
+    onNombreChange(nombre.trim());
+  };
+
+  const inp = { background: C.bg, border: `1px solid ${C.border}`, color: C.text };
+
+  return (
+    <div className="max-w-lg space-y-5">
+      <Card className="p-6">
+        <h3 className="font-semibold text-lg mb-1" style={{ color: C.text }}>Configuración</h3>
+        <p className="text-sm mb-5" style={{ color: C.sub }}>Personalizá tu espacio.</p>
+        <label className="text-xs font-medium mb-1.5 block" style={{ color: C.sub }}>Tu nombre / nombre del negocio</label>
+        <input value={nombre} onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej: Omar, o Huevos del Sur"
+          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4" style={inp} />
+        <motion.button whileTap={{ scale: 0.97 }} onClick={guardar} disabled={saving}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold" style={{ background: C.amber, color: "#0B0F19" }}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Guardar
+        </motion.button>
+      </Card>
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div className="flex flex-col items-center justify-center h-[70vh] text-center">
@@ -1583,8 +1936,16 @@ function AppInterna({ onLogout }) {
   const [saleOpen, setSaleOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // menú móvil
   const [refreshKey, setRefreshKey] = useState(0);
+  const [nombreNegocio, setNombreNegocio] = useState("");
   const { show, node } = useToast();
   const refresh = () => setRefreshKey((k) => k + 1);
+
+  useEffect(() => {
+    // Cargar el nombre configurado del usuario
+    supabase.from("user_settings").select("nombre_negocio").maybeSingle().then(({ data }) => {
+      if (data?.nombre_negocio) setNombreNegocio(data.nombre_negocio);
+    });
+  }, []);
 
   useEffect(() => {
     const h = (e) => {
@@ -1607,6 +1968,10 @@ function AppInterna({ onLogout }) {
       case "gastos": return <Gastos toast={show} />;
       case "reportes": return <Reportes toast={show} />;
       case "objetivos": return <Objetivos toast={show} />;
+      case "clientes": return <Clientes toast={show} />;
+      case "proveedores": return <ProveedoresCompras toast={show} />;
+      case "compras": return <ProveedoresCompras toast={show} />;
+      case "config": return <Configuracion toast={show} nombreNegocio={nombreNegocio} onNombreChange={setNombreNegocio} />;
       default: return <Placeholder label={nav.find((n) => n.key === active)?.label} />;
     }
   };
@@ -1641,7 +2006,7 @@ function AppInterna({ onLogout }) {
       <div className="flex items-center gap-3 px-2 pt-4 mt-2" style={{ borderTop: `1px solid ${C.border}` }}>
         <div className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm" style={{ background: `${C.blue}33`, color: C.blue }}>P</div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">Mi negocio</div>
+          <div className="text-sm font-medium truncate">{nombreNegocio || "Mi negocio"}</div>
           <div className="text-[11px] truncate" style={{ color: C.sub }}>Sesión activa</div>
         </div>
         <button onClick={onLogout} title="Cerrar sesión" className="p-2 rounded-lg hover:bg-white/5">
@@ -1686,7 +2051,7 @@ function AppInterna({ onLogout }) {
           </button>
 
           <div className="min-w-0">
-            <h1 className="font-bold text-base sm:text-lg leading-tight truncate">Hola Patricio 👋</h1>
+            <h1 className="font-bold text-base sm:text-lg leading-tight truncate">Hola {nombreNegocio || "👋"}{nombreNegocio ? " 👋" : ""}</h1>
             <p className="text-xs capitalize truncate" style={{ color: C.sub }}>{today}</p>
           </div>
 
