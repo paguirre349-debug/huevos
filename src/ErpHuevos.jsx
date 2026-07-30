@@ -1522,7 +1522,7 @@ function CommandPalette({ open, onClose, onNav }) {
   );
 }
 
-export default function ErpHuevos() {
+function AppInterna({ onLogout }) {
   const [active, setActive] = useState("dashboard");
   const [cmdOpen, setCmdOpen] = useState(false);
   const [saleOpen, setSaleOpen] = useState(false);
@@ -1586,10 +1586,12 @@ export default function ErpHuevos() {
       <div className="flex items-center gap-3 px-2 pt-4 mt-2" style={{ borderTop: `1px solid ${C.border}` }}>
         <div className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm" style={{ background: `${C.blue}33`, color: C.blue }}>P</div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">Patricio</div>
-          <div className="text-[11px] truncate" style={{ color: C.sub }}>Dueño</div>
+          <div className="text-sm font-medium truncate">Mi negocio</div>
+          <div className="text-[11px] truncate" style={{ color: C.sub }}>Sesión activa</div>
         </div>
-        <Settings size={16} style={{ color: C.sub }} />
+        <button onClick={onLogout} title="Cerrar sesión" className="p-2 rounded-lg hover:bg-white/5">
+          <X size={16} style={{ color: C.sub }} />
+        </button>
       </div>
     </>
   );
@@ -1660,4 +1662,38 @@ export default function ErpHuevos() {
       {node}
     </div>
   );
+}
+
+export default function ErpHuevos() {
+  const [sesion, setSesion] = useState(null);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    // Ver si ya hay sesión activa al abrir
+    supabase.auth.getSession().then(({ data }) => {
+      setSesion(data.session);
+      setCargando(false);
+    });
+    // Escuchar cambios de login/logout
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSesion(session);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setSesion(null);
+  };
+
+  if (cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: C.bg }}>
+        <Loader2 size={24} className="animate-spin" style={{ color: C.amber }} />
+      </div>
+    );
+  }
+
+  if (!sesion) return <Login onLogin={() => {}} />;
+  return <AppInterna onLogout={logout} />;
 }
